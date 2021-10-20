@@ -3,9 +3,7 @@
 extern crate rand;
 #[macro_use]
 extern crate rocket;
-extern crate rocket_contrib;
-#[macro_use]
-extern crate diesel;
+//extern crate rocket_contrib;
 #[macro_use]
 extern crate serde_derive;
 extern crate lazy_static;
@@ -24,6 +22,8 @@ use yarte::Template;
 mod db;
 mod models;
 mod schema;
+
+use rocket::response::content::Json;
 
 struct RandomArray {
     pointer: usize,
@@ -65,12 +65,12 @@ fn random_number() -> i32 {
 }
 
 #[get("/plaintext")]
-fn plaintext() -> &'static str {
+async fn plaintext() -> &'static str {
     "Hello, World!"
 }
 
 #[get("/json")]
-fn json() -> Json<models::Message> {
+async fn json() -> Json<models::Message> {
     let message = models::Message {
         message: "Hello, World!",
     };
@@ -78,7 +78,7 @@ fn json() -> Json<models::Message> {
 }
 
 #[get("/db")]
-fn db(conn: db::DbConn) -> Json<models::World> {
+async fn db(conn: db::DbConn) -> Json<models::World> {
     use schema::world::dsl::*;
 
     let result = world
@@ -90,12 +90,12 @@ fn db(conn: db::DbConn) -> Json<models::World> {
 }
 
 #[get("/queries")]
-fn queries_empty(conn: db::DbConn) -> Json<Vec<models::World>> {
+async fn queries_empty(conn: db::DbConn) -> Json<Vec<models::World>> {
     queries(conn, 1)
 }
 
 #[get("/queries?<q>")]
-fn queries(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
+async fn queries(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
     use schema::world::dsl::*;
 
     let q = if q == 0 {
@@ -127,7 +127,7 @@ pub struct FortunesTemplate<'a> {
 }
 
 #[get("/fortunes")]
-fn fortunes(conn: db::DbConn) -> content::Html<String> {
+async fn fortunes(conn: db::DbConn) -> content::Html<String> {
     use schema::fortune::dsl::*;
 
     let mut fortunes = fortune
@@ -151,12 +151,12 @@ fn fortunes(conn: db::DbConn) -> content::Html<String> {
 }
 
 #[get("/updates")]
-fn updates_empty(conn: db::DbConn) -> Json<Vec<models::World>> {
+async fn updates_empty(conn: db::DbConn) -> Json<Vec<models::World>> {
     updates(conn, 1)
 }
 
 #[get("/updates?<q>")]
-fn updates(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
+async fn updates(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
     use schema::world::dsl::*;
 
     let q = if q == 0 {
@@ -203,6 +203,7 @@ fn main() {
     config
         .set_secret_key("dY+Rj2ybjGxKetLawKGSWi6EzESKejvENbQ3stffZg0=")
         .expect("failed to set secret");
+
     rocket::custom(config)
         .mount(
             "/",
