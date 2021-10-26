@@ -3,27 +3,23 @@
 extern crate rand;
 #[macro_use]
 extern crate rocket;
-//extern crate rocket_contrib;
 #[macro_use]
 extern crate serde_derive;
 extern crate lazy_static;
 
-use diesel::prelude::*;
-use diesel::result::Error;
-use lazy_static::lazy_static;
+mod models;
+mod world;
+mod fortune;
+
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use rocket::config::{Config, Environment, LoggingLevel};
+use rocket::config::{Config};
 use rocket::response::content;
-use rocket_contrib::json::Json;
-use std::sync::Mutex;
-use yarte::Template;
-
-mod db;
-mod models;
-mod schema;
-
 use rocket::response::content::Json;
+use rocket::{Build, Request, Rocket};
+use std::sync::Mutex;
+use sea_orm_rocket::{Connection, Database};
+use yarte::Template;
 
 struct RandomArray {
     pointer: usize,
@@ -66,37 +62,34 @@ fn random_number() -> i32 {
 
 #[get("/plaintext")]
 async fn plaintext() -> &'static str {
-    "Hello, World!"
+    "Hello, world::Model!"
 }
 
 #[get("/json")]
 async fn json() -> Json<models::Message> {
     let message = models::Message {
-        message: "Hello, World!",
+        message: "Hello, world::Model!",
     };
     Json(message)
 }
 
 #[get("/db")]
-async fn db(conn: db::DbConn) -> Json<models::World> {
-    use schema::world::dsl::*;
+async fn db(conn: Connection<'_, Db>) -> Json<world::Model> {
+    let db = conn.into_inner();
 
-    let result = world
-        .filter(id.eq(random_number()))
-        .first::<models::World>(&*conn)
-        .expect("error loading world");
+    let result : world::Model = world::Model::Model::find_by_id(random_number()).one(db).await.expect("error loading world::Model");
 
     Json(result)
 }
 
 #[get("/queries")]
-async fn queries_empty(conn: db::DbConn) -> Json<Vec<models::World>> {
+async fn queries_empty(conn: Connection<'_, Db>) -> Json<Vec<world::Model>> {
     queries(conn, 1)
 }
 
 #[get("/queries?<q>")]
-async fn queries(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
-    use schema::world::dsl::*;
+async fn queries(conn: Connection<'_, Db>, q: u16) -> Json<Vec<world::Model>> {
+    let db = conn.into_inner();
 
     let q = if q == 0 {
         1
@@ -110,10 +103,13 @@ async fn queries(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
 
     for _ in 0..q {
         let query_id = random_number();
-        let result = world
-            .filter(id.eq(query_id))
-            .first::<models::World>(&*conn)
-            .unwrap_or_else(|_| panic!("error loading world, id={}", query_id));
+
+        let result = world::Model::find_by_id(query_id).one(db).await?;
+
+        // let result = world::Model
+        //     .filter(id.eq(query_id))
+        //     .first::<world::Model>(&*conn)
+        //     .unwrap_or_else(|_| panic!("error loading world::Model, id={}", query_id));
         results.push(result);
     }
 
@@ -123,18 +119,19 @@ async fn queries(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
 #[derive(Template)]
 #[template(path = "fortunes.html.hbs")]
 pub struct FortunesTemplate<'a> {
-    pub fortunes: &'a Vec<models::Fortune>,
+    pub fortunes: &'a Vec<fortune::Model>,
 }
 
 #[get("/fortunes")]
-async fn fortunes(conn: db::DbConn) -> content::Html<String> {
-    use schema::fortune::dsl::*;
+async fn fortunes(conn: Connection<'_, Db>) -> content::Html<String> {
+    let db = conn.into_inner();
 
-    let mut fortunes = fortune
-        .load::<models::Fortune>(&*conn)
-        .expect("error loading fortunes");
+    let mut fortunes: Vec<fortune::Model> = fortune::Model::find().all(db).await?;
+        // fortune
+        // .load::<models::fortune::Model>(&*conn)
+        // .expect("error loading fortunes");
 
-    fortunes.push(models::Fortune {
+    fortunes.push(fortune::Model {
         id: 0,
         message: "Additional fortune added at request time.".to_string(),
     });
@@ -151,13 +148,13 @@ async fn fortunes(conn: db::DbConn) -> content::Html<String> {
 }
 
 #[get("/updates")]
-async fn updates_empty(conn: db::DbConn) -> Json<Vec<models::World>> {
+async fn updates_empty(conn: Connection<'_, Db>) -> Json<Vec<world::Model>> {
     updates(conn, 1)
 }
 
 #[get("/updates?<q>")]
-async fn updates(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
-    use schema::world::dsl::*;
+async fn updates(conn: Connection<'_, Db>, q: u16) -> Json<Vec<world::Model>> {
+    let db = conn.into_inner();
 
     let q = if q == 0 {
         1
@@ -171,23 +168,25 @@ async fn updates(conn: db::DbConn, q: u16) -> Json<Vec<models::World>> {
 
     for _ in 0..q {
         let query_id = random_number();
-        let mut result = world
-            .filter(id.eq(query_id))
-            .first::<models::World>(&*conn)
-            .unwrap_or_else(|_| panic!("error loading world, id={}", query_id));
+        let mut result = world::Model::find_by_id(query_id).one(db).await?;
+
+            // world::Model
+            // .filter(id.eq(query_id))
+            // .first::<world::Model>(&*conn)
+            // .unwrap_or_else(|_| panic!("error loading world::Model, id={}", query_id));
         result.randomNumber = random_number();
         results.push(result);
     }
 
-    let _ = conn.transaction::<(), Error, _>(|| {
-        for w in &results {
-            let _ = diesel::update(world)
-                .filter(id.eq(w.id))
-                .set(randomnumber.eq(w.randomNumber))
-                .execute(&*conn);
-        }
-        Ok(())
-    });
+    // let _ = conn.transaction::<(), Error, _>(|| {
+    //     for w in &results {
+    //         let _ = diesel::update(world::Model)
+    //             .filter(id.eq(w.id))
+    //             .set(randomnumber.eq(w.randomNumber))
+    //             .execute(&*conn);
+    //     }
+    //     Ok(())
+    // });
 
     Json(results)
 }
@@ -218,6 +217,6 @@ fn main() {
                 updates_empty,
             ],
         )
-        .manage(db::init_pool())
+        //.manage(db::init_pool())
         .launch();
 }
