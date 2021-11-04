@@ -1,73 +1,55 @@
 extern crate lazy_static;
 extern crate rand;
 
-#[cfg(test)]
-use std::collections::HashMap;
-use crate::request::RequestId;
-#[cfg(not(test))]
-use rand::seq::SliceRandom;
-#[cfg(not(test))]
-use rand::thread_rng;
-use std::sync::Mutex;
-#[cfg(test)]
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
+
+pub struct StandardRandomizerFactory;
+struct Incremental(i32);
+
+pub type DynRandomizerFactory = Arc<dyn RandomizerFactory + Send + Sync>;
+pub type DynRandomizer = Arc<dyn Randomizer + Send + Sync>;
 
 #[cfg(not(test))]
-lazy_static! {
-    static ref RANDOM_ARRAY: Mutex<RandomArray> = Mutex::new(RandomArray::new(10000));
-}
-
-#[cfg(test)]
-lazy_static! {
-    static ref COUNTER_MAP: Mutex<HashMap<RequestId, AtomicI32>> = Mutex::new(HashMap::new());
-}
-
-#[cfg(not(test))]
-pub fn random_number(_request_id: &RequestId) -> i32 {
-    RANDOM_ARRAY
-        .lock()
-        .expect("Failed to lock RANDOM_ARRAY")
-        .next()
-}
-
-#[cfg(test)]
-pub fn random_number(request_id: &RequestId) -> i32 {
-    if !COUNTER_MAP.lock().expect("Failed to lock COUNTER_MAP").contains_key(&request_id) {
-        COUNTER_MAP.lock().expect("Failed to lock COUNTER_MAP").insert(*request_id, AtomicI32::new(1));
+impl RandomizerFactory for StandardRandomizerFactory  {
+    fn create(self) -> DynRandomizer {
+        Arc::new(SmallRng::from_entropy()) as DynRandomizer
     }
-
-    COUNTER_MAP.lock().expect("Failed to lock COUNTER_MAP").get_key_value(request_id).expect("Could not get RequestId")
-        .1.fetch_add(1, Ordering::Relaxed)
 }
 
-#[cfg(not(test))]
-struct RandomArray {
-    pointer: usize,
-    size: i32,
-    data: Vec<i32>,
-}
-
-#[cfg(not(test))]
-impl RandomArray {
-    fn new(size: i32) -> Self {
-        let mut data: Vec<i32> = (1..=size).collect();
-        let mut rng = thread_rng();
-        data.shuffle(&mut rng);
-
-        RandomArray {
-            pointer: 0,
-            size,
-            data,
-        }
+#[cfg(test)]
+impl RandomizerFactory for StandardRandomizerFactory  {
+    fn create(self) -> DynRandomizer {
+        Arc::new(Incremental::new()) as DynRandomizer
     }
+}
 
+pub trait RandomizerFactory {
+    fn create(self) -> DynRandomizer;
+}
+
+pub trait Randomizer {
+    fn next(&mut self) -> i32;
+}
+
+impl Randomizer for SmallRng {
     fn next(&mut self) -> i32 {
-        if self.pointer >= self.size as usize {
-            self.pointer = 1;
-        } else {
-            self.pointer += 1;
-        }
-        self.data[self.pointer - 1]
+        self.gen_range(1..10000)
+    }
+}
+
+impl Randomizer for Incremental {
+    fn next(&mut self) -> i32 {
+        self.0 = self.0 + 1;
+
+        self.0
+    }
+}
+
+impl Incremental {
+    fn new() -> Self {
+        Self(0)
     }
 }
 

@@ -14,6 +14,7 @@ mod request;
 use dotenv::dotenv;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::env;
+use std::sync::Arc;
 use yarte::Template;
 use crate::database::{DatabaseConnection, DbPool};
 use sqlx::Acquire;
@@ -24,6 +25,7 @@ use axum::{
     routing::get,
     AddExtensionLayer, Json, Router,
 };
+use axum::extract::Extension;
 use axum::http::{header, HeaderValue};
 use axum::response::Html;
 use serde::{Deserialize};
@@ -31,9 +33,10 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use hyper::Body;
 
 use models::{World, Fortune, Message};
-use random::random_number;
+use random::DynRandomizerFactory;
 use request::RequestId;
 use database::create_pool;
+use crate::random::StandardRandomizerFactory;
 
 #[derive(Debug, Deserialize)]
 struct Params {
@@ -52,8 +55,9 @@ async fn json() -> impl IntoResponse {
     (StatusCode::OK, Json(message))
 }
 
-async fn db(DatabaseConnection(mut conn): DatabaseConnection, id: RequestId) -> impl IntoResponse {
-    let number = random_number(&id);
+async fn db(DatabaseConnection(mut conn): DatabaseConnection, Extension(randomizer_factory): Extension<DynRandomizerFactory>) -> impl IntoResponse {
+    let mut randomizer = randomizer_factory.create();
+    let number = randomizer.next();
 
     let world : World = sqlx::query_as("SELECT id, randomnumber FROM World WHERE id = $1").bind(number)
         .fetch_one(&mut conn).await.ok().expect("error loading world");
@@ -61,7 +65,7 @@ async fn db(DatabaseConnection(mut conn): DatabaseConnection, id: RequestId) -> 
     (StatusCode::OK, Json(world))
 }
 
-async fn queries(DatabaseConnection(mut conn): DatabaseConnection, id: RequestId, Query(params): Query<Params>) -> impl IntoResponse {
+async fn queries(DatabaseConnection(mut conn): DatabaseConnection, Extension(randomizer_factory): Extension<DynRandomizerFactory>, Query(params): Query<Params>) -> impl IntoResponse {
     let mut q = 0;
 
     if params.q.is_some() {
@@ -76,10 +80,12 @@ async fn queries(DatabaseConnection(mut conn): DatabaseConnection, id: RequestId
         q
     };
 
+    let mut randomizer = randomizer_factory.create();
+
     let mut results = Vec::with_capacity(q as usize);
 
     for _ in 0..q {
-        let query_id = random_number(&id);
+        let query_id = randomizer.next();
 
         let result :World = sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
             .fetch_one(&mut conn).await.ok().expect("error loading world");
@@ -116,7 +122,7 @@ async fn fortunes(DatabaseConnection(mut conn): DatabaseConnection) -> impl Into
     )
 }
 
-async fn updates(DatabaseConnection(mut conn): DatabaseConnection, id: RequestId, Query(params): Query<Params>) -> impl IntoResponse {
+async fn updates(DatabaseConnection(mut conn): DatabaseConnection, Extension(randomizer_factory): Extension<DynRandomizerFactory>, Query(params): Query<Params>) -> impl IntoResponse {
     let mut q = 0;
 
     if params.q.is_some() {
@@ -131,14 +137,16 @@ async fn updates(DatabaseConnection(mut conn): DatabaseConnection, id: RequestId
         q
     };
 
+    let mut randomizer = randomizer_factory.create();
+
     let mut results = Vec::with_capacity(q as usize);
 
     for _ in 0..q {
-        let query_id = random_number(&id);
+        let query_id = randomizer.next();
         let mut result :World = sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
             .fetch_one(&mut conn).await.ok().expect("World was not found");
 
-        result.random_number = random_number(&id);
+        result.random_number = randomizer.next();
         results.push(result);
     }
 
@@ -180,6 +188,8 @@ async fn main() {
 }
 
 async fn router(pool: DbPool) -> Router {
+    let randomizerFactory = Arc::new(StandardRandomizerFactory) as DynRandomizerFactory;
+
     Router::new()
         .route("/plaintext", get(plaintext))
         .route("/json", get(json))
@@ -188,6 +198,7 @@ async fn router(pool: DbPool) -> Router {
         .route("/queries", get(queries))
         .route("/updates", get(updates))
         .layer(AddExtensionLayer::new(pool))
+        .layer(AddExtensionLayer::new(randomizerFactory))
         .layer(SetResponseHeaderLayer::<_, Body>::if_not_present(header::SERVER, HeaderValue::from_static("Axum")))
 }
 
