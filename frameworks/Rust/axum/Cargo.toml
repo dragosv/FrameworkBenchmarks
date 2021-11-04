@@ -25,7 +25,4 @@ hyper = "0.14"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.1", features = ["set-header"] }
 
-sqlx = { version = "^0.5", features = [ "postgres", "macros", "migrate", "sqlite", "runtime-tokio-native-tls" ] }
-
-tracing = "0.1"
-tracing-subscriber = "0.2"
+sqlx = { version = "^0.5", features = [ "postgres", "macros", "runtime-tokio-native-tls" ] }
