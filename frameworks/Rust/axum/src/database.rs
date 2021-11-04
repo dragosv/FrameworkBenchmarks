@@ -4,22 +4,13 @@ use axum::http::StatusCode;
 use sqlx::Pool;
 use sqlx::pool::PoolConnection;
 
-#[cfg(not(test))]
 pub type DbType = sqlx::Postgres;
-#[cfg(test)]
-pub type DbType = sqlx::Sqlite;
 
 pub type DbPool = Pool<DbType>;
 pub type DbPoolConnection = PoolConnection<DbType>;
 
-#[cfg(not(test))]
 pub async fn create_pool(database_url: String) -> DbPool {
     sqlx::postgres::PgPoolOptions::new().max_connections(100).connect(&*database_url).await.unwrap()
-}
-
-#[cfg(test)]
-pub async fn create_pool(database_url: String) -> DbPool {
-    sqlx::sqlite::SqlitePoolOptions::new().connect(&*database_url).await.unwrap()
 }
 
 pub struct DatabaseConnection(pub DbPoolConnection);
