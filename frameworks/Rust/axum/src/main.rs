@@ -6,12 +6,13 @@ extern crate async_trait;
 mod models;
 mod database;
 
+use std::convert::Infallible;
 use dotenv::dotenv;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::env;
 use yarte::Template;
-use crate::database::{DatabaseConnection, DbPool};
-use sqlx::{Acquire};
+use crate::database::{DatabaseConnection, DbPool, DbPoolConnection};
+use sqlx::{Acquire, Postgres, Transaction};
 use axum::{
     extract::{Query},
     http::StatusCode,
@@ -19,8 +20,8 @@ use axum::{
     routing::get,
     AddExtensionLayer, Json, Router,
 };
-use axum::http::{header, HeaderValue};
-use axum::response::Html;
+use axum::body::{Bytes, Full};
+use axum::http::{header, HeaderValue, Response};
 use serde::{Deserialize};
 use tower_http::set_header::SetResponseHeaderLayer;
 use hyper::Body;
@@ -32,7 +33,7 @@ use database::create_pool;
 
 #[derive(Debug, Deserialize)]
 struct Params {
-    q: Option<u16>,
+    queries: Option<String>,
 }
 
 async fn plaintext() -> &'static str {
@@ -49,7 +50,7 @@ async fn json() -> impl IntoResponse {
 
 async fn db(DatabaseConnection(mut conn): DatabaseConnection) -> impl IntoResponse {
     let mut rng = SmallRng::from_entropy();
-    let number = rng.gen_range(1..10_00);
+    let number = random_number(&mut rng);
 
     let world : World = sqlx::query_as("SELECT id, randomnumber FROM World WHERE id = $1").bind(number)
         .fetch_one(&mut conn).await.ok().expect("error loading world");
@@ -58,28 +59,16 @@ async fn db(DatabaseConnection(mut conn): DatabaseConnection) -> impl IntoRespon
 }
 
 async fn queries(DatabaseConnection(mut conn): DatabaseConnection, Query(params): Query<Params>) -> impl IntoResponse {
-    let mut q = 0;
-
-    if params.q.is_some() {
-        q = params.q.ok_or("could not get value").unwrap();
-    }
-
-    let q = if q == 0 {
-        1
-    } else if q > 500 {
-        500
-    } else {
-        q
-    };
+    let q = parse_params(params);
 
     let mut rng = SmallRng::from_entropy();
 
     let mut results = Vec::with_capacity(q as usize);
 
     for _ in 0..q {
-        let query_id = rng.gen_range(1..10_00);
+        let query_id = random_number(&mut rng);
 
-        let result :World = sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
+        let result :World =  sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
             .fetch_one(&mut conn).await.ok().expect("error loading world");
 
         results.push(result);
@@ -105,7 +94,7 @@ async fn fortunes(DatabaseConnection(mut conn): DatabaseConnection) -> impl Into
 
     fortunes.sort_by(|a, b| a.message.cmp(&b.message));
 
-    Html(
+    Utf8Html(
         FortunesTemplate {
             fortunes: &fortunes,
         }
@@ -115,10 +104,51 @@ async fn fortunes(DatabaseConnection(mut conn): DatabaseConnection) -> impl Into
 }
 
 async fn updates(DatabaseConnection(mut conn): DatabaseConnection, Query(params): Query<Params>) -> impl IntoResponse {
+    let q = parse_params(params);
+
+    let mut rng = SmallRng::from_entropy();
+
+    let mut results = Vec::with_capacity(q as usize);
+
+    for _ in 0..q {
+        let query_id = random_number(&mut rng);
+        let mut result :World =  sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
+            .fetch_one(&mut conn).await.ok().expect("error loading world");
+
+        result.random_number = random_number(&mut rng);
+        results.push(result);
+    }
+
+    let mut tx = conn.begin().await.ok().expect("could not start transaction");
+
+    for w in &results {
+        sqlx::query("UPDATE World SET randomnumber = $1 WHERE id = $2")
+            .bind(w.random_number).bind(w.id)
+            .execute(&mut tx)
+            .await.ok().expect("could not update world");
+    }
+
+    tx.commit().await.ok().expect("could not update worlds");
+
+    (StatusCode::OK, Json(results))
+}
+
+fn random_number(rng: &mut SmallRng) -> i32 {
+    (rng.gen::<u32>() % 10_000 + 1) as i32
+}
+
+fn parse_params(params: Params) -> i32 {
     let mut q = 0;
 
-    if params.q.is_some() {
-        q = params.q.ok_or("could not get value").unwrap();
+    if params.queries.is_some() {
+        let queries = params.queries.ok_or("could not get value").unwrap();
+
+        let queries_as_int = queries.parse::<i32>();
+
+        match queries_as_int {
+            Ok(_ok) => q = queries_as_int.unwrap(),
+            Err(_e) => q = 1,
+        }
     }
 
     let q = if q == 0 {
@@ -129,31 +159,7 @@ async fn updates(DatabaseConnection(mut conn): DatabaseConnection, Query(params)
         q
     };
 
-    let mut rng = SmallRng::from_entropy();
-
-    let mut results = Vec::with_capacity(q as usize);
-
-    for _ in 0..q {
-        let query_id = rng.gen_range(1..10_00);
-        let mut result :World = sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
-            .fetch_one(&mut conn).await.ok().expect("World was not found");
-
-        result.random_number = rng.gen_range(1..10_00);
-        results.push(result);
-    }
-
-    let mut tx = conn.begin().await.ok().expect("could not start transaction");
-
-    for w in &results {
-        sqlx::query("UPDATE World SET randomnumber = $1 WHERE id = $2")
-            .bind(w.random_number).bind(w.id)
-            .execute(&mut tx)
-            .await.ok().expect("Could not update World");
-    }
-
-    tx.commit().await.ok().expect("could not update worlds");
-
-    (StatusCode::OK, Json(results))
+    q
 }
 
 #[tokio::main]
@@ -188,4 +194,26 @@ async fn router(pool: DbPool) -> Router {
         .layer(SetResponseHeaderLayer::<_, Body>::if_not_present(header::SERVER, HeaderValue::from_static("Axum")))
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Utf8Html<T>(pub T);
 
+impl<T> IntoResponse for Utf8Html<T>
+    where
+        T: Into<Full<Bytes>>,
+{
+    type Body = Full<Bytes>;
+    type BodyError = Infallible;
+
+    fn into_response(self) -> Response<Self::Body> {
+        let mut res = Response::new(self.0.into());
+        res.headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+        res
+    }
+}
+
+impl<T> From<T> for Utf8Html<T> {
+    fn from(inner: T) -> Self {
+        Self(inner)
+    }
+}

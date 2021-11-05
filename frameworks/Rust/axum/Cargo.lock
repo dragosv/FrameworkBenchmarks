@@ -154,8 +154,6 @@ dependencies = [
  "futures",
  "futures-util",
  "hyper",
- "lazy_static",
- "num_cpus",
  "rand",
  "serde",
  "serde_derive",
