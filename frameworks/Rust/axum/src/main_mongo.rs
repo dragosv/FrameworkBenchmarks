@@ -92,9 +92,40 @@ async fn fortunes(DatabaseConnection(db): DatabaseConnection) -> impl IntoRespon
         FortunesTemplate {
             fortunes: &fortunes,
         }
-        .call()
-        .expect("error rendering template"),
+            .call()
+            .expect("error rendering template"),
     )
+}
+
+async fn updates(DatabaseConnection(mut db): DatabaseConnection, Query(params): Query<Params>) -> impl IntoResponse {
+    let q = parse_params(params);
+
+    let mut rng = SmallRng::from_entropy();
+
+    let mut results = Vec::with_capacity(q as usize);
+
+    for _ in 0..q {
+        let query_id = random_number(&mut rng);
+        let mut result :World = find_world_by_id(&mut db, query_id).await;
+
+        result.random_number = random_number(&mut rng) as f32;
+        results.push(result);
+    }
+
+    let world_collection = db.collection::<World>("world");
+
+    for w in &results {
+        // Update the document:
+        let update_result = world_collection.update_one(
+            doc! { "_id": w.id },
+            doc! { "$set": { "year": w.random_number } },
+            None,
+        ).await;
+
+        update_result.expect("could not update world");
+    }
+
+    (StatusCode::OK, Json(results))
 }
 
 #[tokio::main]
@@ -117,6 +148,7 @@ async fn main() {
         .route("/fortunes", get(fortunes))
         .route("/db", get(db))
         .route("/queries", get(queries))
+        .route("/updates", get(updates))
         .layer(AddExtensionLayer::new(client_options))
         .layer(SetResponseHeaderLayer::<_, Body>::if_not_present(header::SERVER, HeaderValue::from_static("Axum")));
 
