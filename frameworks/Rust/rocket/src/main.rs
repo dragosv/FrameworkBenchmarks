@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate rocket;
 extern crate serde_derive;
 extern crate dotenv;
@@ -20,6 +18,8 @@ use yarte::Template;
 use rocket_db_pools::{sqlx, Database, Connection};
 use sqlx::Acquire;
 use figment::Figment;
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
 
 use models::{World, Fortune, Message};
 use database::HelloWorld;
@@ -40,7 +40,9 @@ async fn json() -> Json<models::Message> {
 
 #[get("/db")]
 async fn db(mut db: Connection<HelloWorld>) -> Json<World> {
-    let number = random_number();
+    let mut rng = SmallRng::from_entropy();
+
+    let number = random_number(&mut rng);
 
     let result : World = sqlx::query_as("SELECT id, randomnumber FROM World WHERE id = $1").bind(number)
         .fetch_one(&mut *db).await.ok().expect("error loading world");
@@ -65,8 +67,10 @@ async fn queries(mut db: Connection<HelloWorld>, q: u16) -> Json<Vec<World>> {
 
     let mut results = Vec::with_capacity(q as usize);
 
+    let mut rng = SmallRng::from_entropy();
+
     for _ in 0..q {
-        let query_id = random_number();
+        let query_id = random_number(&mut rng);
 
         let result :World = sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
             .fetch_one(&mut *db).await.ok().expect("error loading world");
@@ -121,12 +125,14 @@ async fn updates(mut db: Connection<HelloWorld>, q: u16) -> Json<Vec<World>> {
 
     let mut results = Vec::with_capacity(q as usize);
 
+    let mut rng = SmallRng::from_entropy();
+
     for _ in 0..q {
-        let query_id = random_number();
+        let query_id = random_number(&mut rng);
         let mut result :World = sqlx::query_as("SELECT * FROM World WHERE id = $1").bind(query_id)
             .fetch_one(&mut *db).await.ok().expect("World was not found");
 
-        result.random_number = random_number();
+        result.random_number = random_number(&mut rng);
         results.push(result);
     }
 
