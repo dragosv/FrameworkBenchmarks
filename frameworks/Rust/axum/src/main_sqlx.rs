@@ -8,9 +8,9 @@ mod models_common;
 mod models_sqlx;
 mod database_sqlx;
 mod utils;
+mod server;
 
 use dotenv::dotenv;
-use std::net::{Ipv4Addr, SocketAddr};
 use std::env;
 use crate::database_sqlx::{DatabaseConnection};
 use axum::{
@@ -23,6 +23,7 @@ use axum::{
 use axum::http::{header, HeaderValue};
 use tower_http::set_header::SetResponseHeaderLayer;
 use hyper::Body;
+use tokio::sync::OnceCell;
 use rand::rngs::SmallRng;
 use rand::{SeedableRng};
 use sqlx::PgPool;
@@ -108,28 +109,45 @@ async fn updates(DatabaseConnection(mut conn): DatabaseConnection, Query(params)
     (StatusCode::OK, Json(results))
 }
 
-#[tokio::main]
-async fn main() {
+pub static POOL: OnceCell<PgPool> = OnceCell::const_new();
+
+fn main() {
     dotenv().ok();
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
     let database_url = env::var("AXUM_TECHEMPOWER_DATABASE_URL").ok()
         .expect("AXUM_TECHEMPOWER_DATABASE_URL environment variable was not set");
 
-    let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 8000));
-
     // setup connection pool
-    let pool = create_pool(database_url).await;
+    rt.block_on(async {
+        POOL
+            .set(create_pool(database_url).await)
+            .ok();
+    });
 
-    let app = router(pool).await;
+    for _ in 1..num_cpus::get() {
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(serve());
+        });
+    }
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    rt.block_on(serve());
 }
 
-async fn router(pool: PgPool) -> Router {
-    Router::new()
+async fn serve() {
+    println!("Started http server: 127.0.0.1:8000");
+
+    let pool: PgPool = POOL.get().expect("could not get pool").clone();
+
+    let app = Router::new()
         .route("/plaintext", get(plaintext))
         .route("/json", get(json))
         .route("/fortunes", get(fortunes))
@@ -137,7 +155,12 @@ async fn router(pool: PgPool) -> Router {
         .route("/queries", get(queries))
         .route("/updates", get(updates))
         .layer(AddExtensionLayer::new(pool))
-        .layer(SetResponseHeaderLayer::<_, Body>::if_not_present(header::SERVER, HeaderValue::from_static("Axum")))
+        .layer(SetResponseHeaderLayer::<_, Body>::if_not_present(header::SERVER, HeaderValue::from_static("Axum")));
+
+    server::builder()
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
 
 #[derive(Template)]

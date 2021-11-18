@@ -8,9 +8,9 @@ mod models_common;
 mod models_mongo;
 mod database_mongo;
 mod utils;
+mod server;
 
 use dotenv::dotenv;
-use std::net::{Ipv4Addr, SocketAddr};
 use std::env;
 use axum::{
     extract::{Query},
@@ -28,6 +28,7 @@ use rand::{SeedableRng};
 use yarte::Template;
 use mongodb::{bson::doc, Client, Database};
 use mongodb::options::ClientOptions;
+use tokio::sync::OnceCell;
 
 use models_mongo::{World, Fortune};
 use common_handlers::{json, plaintext};
@@ -100,22 +101,41 @@ async fn fortunes(DatabaseConnection(db): DatabaseConnection) -> impl IntoRespon
     )
 }
 
-#[tokio::main]
-async fn main() {
+pub static CLIENT: OnceCell<Client> = OnceCell::const_new();
+
+fn main() {
     dotenv().ok();
 
-    let database_url = env::var("AXUM_TECHEMPOWER_MONGODB_URL").ok()
-        .expect("AXUM_TECHEMPOWER_MONGODB_URL environment variable was not set");
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
-    let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, 8000));
+    rt.block_on(async {
+        CLIENT
+            .set(create_client().await)
+            .ok();
+    });
 
-    // setup connection pool
-    let mut client_options = ClientOptions::parse(database_url).await.unwrap();
-    client_options.max_pool_size = Some(100);
+    for _ in 1..num_cpus::get() {
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(serve());
+        });
+    }
 
-    let client = Client::with_options(client_options).unwrap();
+    rt.block_on(serve());
+}
 
-    let app = Router::new()
+async fn serve() {
+    println!("Started http server: 127.0.0.1:8000");
+
+    let client = CLIENT.get().expect("could not get client").clone();
+
+    let router =     Router::new()
         .route("/plaintext", get(plaintext))
         .route("/json", get(json))
         .route("/fortunes", get(fortunes))
@@ -124,10 +144,23 @@ async fn main() {
         .layer(AddExtensionLayer::new(client))
         .layer(SetResponseHeaderLayer::<_, Body>::if_not_present(header::SERVER, HeaderValue::from_static("Axum")));
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    server::builder()
+        .http1_pipeline_flush(true)
+        .serve(router.into_make_service())
         .await
         .unwrap();
+}
+
+async fn create_client() -> Client {
+    let database_url = env::var("AXUM_TECHEMPOWER_MONGODB_URL").ok()
+        .expect("AXUM_TECHEMPOWER_MONGODB_URL environment variable was not set");
+
+    // setup connection pool
+    let mut client_options = ClientOptions::parse(database_url).await.unwrap();
+    client_options.max_pool_size = Some(200);
+
+    let client = Client::with_options(client_options).unwrap();
+    client
 }
 
 #[derive(Template)]
