@@ -1,9 +1,8 @@
-require "granite/adapter/pg"
+class World < Jennifer::Model::Base
+  table_name "World"
 
-class World < Granite::Base
-  adapter pg
-
-  table_name world
-  primary id : Int32
-  field randomnumber : Int32
+  mapping(
+    id: Primary32,
+    random_number: {type: Int32, column: "randomnumber"},
+  )
 end

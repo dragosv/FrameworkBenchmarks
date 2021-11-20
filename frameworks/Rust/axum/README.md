@@ -14,6 +14,11 @@ Axum is a web application framework that focuses on ergonomics and modularity.
 PostgreSQL
 
 * Raw using [sqlx](https://github.com/launchbadge/sqlx)
+* Raw using [bb8](https://github.com/djc/bb8)
+
+MongoDb
+
+* Raw using [mongo-rust-driver](https://github.com/mongodb/mongo-rust-driver)
 
 ## Test URLs
 

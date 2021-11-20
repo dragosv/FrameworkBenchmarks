@@ -1,9 +1,8 @@
-require "granite/adapter/pg"
+class Fortune < Jennifer::Model::Base
+  table_name "Fortune"
 
-class Fortune < Granite::Base
-  adapter pg
-
-  table_name fortune
-  primary id : Int32
-  field message : String
+  mapping(
+    id: Primary32,
+    message: String
+  )
 end

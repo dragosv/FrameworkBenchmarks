@@ -8,7 +8,7 @@ class BenchmarkController < Amber::Controller::Base
   before_action do
     all do
       response.headers["Server"] = "Amber"
-      response.headers["Date"] = HTTP.format_time(Time.now)
+      response.headers["Date"] = HTTP.format_time(Time.local)
     end
   end
 
@@ -26,7 +26,7 @@ class BenchmarkController < Amber::Controller::Base
     response.content_type = JSON
     results = {} of Symbol => Int32
     if world = World.find rand(1..ID_MAXIMUM)
-      results = {id: world.id, randomNumber: world.randomnumber}
+      results = {id: world.id, randomNumber: world.random_number}
     end
     results.to_json
   end
@@ -39,7 +39,7 @@ class BenchmarkController < Amber::Controller::Base
 
     results = (1..queries).map do
       if world = World.find rand(1..ID_MAXIMUM)
-        {id: world.id, randomNumber: world.randomnumber}
+        {id: world.id, randomNumber: world.random_number}
       end
     end
 
@@ -51,12 +51,18 @@ class BenchmarkController < Amber::Controller::Base
     queries = params["queries"]
     queries = queries.to_i? || 1
     queries = queries.clamp(1..500)
+    results = [{id: 0, randomNumber: 0}]
 
-    results = (1..queries).map do
-      if world = World.find rand(1..ID_MAXIMUM)
-        world.randomnumber = rand(1..ID_MAXIMUM)
-        world.save
-        {id: world.id, randomNumber: world.randomnumber}
+    Jennifer::Adapter.default_adapter.transaction do |tx|
+      results = (1..queries).map do
+        if world = World.find rand(1..ID_MAXIMUM)
+  
+          random_number = rand(1..ID_MAXIMUM)
+  
+          world.update({:random_number => random_number})
+  
+          {id: world.id, randomNumber: random_number}
+        end
       end
     end
 
@@ -65,11 +71,9 @@ class BenchmarkController < Amber::Controller::Base
 
   def fortunes
     response.content_type = HTML_UTF8
-    fortune = Fortune.new
-    fortune.id = 0
-    fortune.message = "Additional fortune added at request time."
+    fortune = Fortune.new({:id => 0, :message => "Additional fortune added at request time."})
 
-    fortunes = Fortune.all
+    fortunes = Fortune.all.to_a
     fortunes << fortune
     fortunes.sort_by! { |fortune| fortune.message || "" }
 
