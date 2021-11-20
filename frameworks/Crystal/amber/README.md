@@ -6,22 +6,39 @@ This is the [Amber](https://amberframework.org) test of the Framework Benchmarks
 
 **Amber** is a web application framework written in [Crystal](http://www.crystal-lang.org) inspired by Kemal, Rails, Phoenix and other popular application frameworks.
 
-The purpose of Amber is not to create yet another framework, but to take advantage of the beautiful Crystal language capabilities and provide engineers an efficient, cohesive, and well maintain web framework for the crystal community that embraces the language philosophies, conventions, and guides.
+* [User Guide](https://docs.amberframework.org/amber)
+* [API Documentation](https://docs.rs/axum/0.3.0/axum/)
+* Cargo package: [axum](https://crates.io/crates/axum)
 
-Amber Crystal borrows concepts that already have been battle tested, successful, and embrace new concepts through team and community collaboration and analysis, that aligns with Crystal philosophies.
+## Database
 
-## Contributors
+PostgreSQL
 
-- Dru Jensen [drujensen](https://github.com/drujensen) 
-- Elias Perez [eliasjpr](https://github.com/eliasjpr) 
-- Isaac Sloan [elorest](https://github.com/elorest) 
-- Faustino Aguilar [faustinoaq](https://github.com/faustinoaq) 
-- Nick Franken [fridgerator](https://github.com/fridgerator)
-- Mark Siemers [marksiemers](https://github.com/marksiemers)
-- Robert Carpenter [robacarp](https://github.com/robacarp) 
+* Orm using [granite](https://github.com/amberframework/granite)
 
-See more [Amber contributors](https://github.com/amberframework/amber/graphs/contributors)
+## Test URLs
 
-## License
+### Test 1: JSON Encoding
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+    http://localhost:8080/json
+
+### Test 2: Single Row Query
+
+    http://localhost:8080/db
+
+### Test 3: Multi Row Query
+
+    http://localhost:8080/queries?queries=20
+
+### Test 4: Fortunes (Template rendering)
+
+    http://localhost:8080/fortunes
+
+### Test 5: Update Query
+
+    http://localhost:8080/updates?queries=20
+
+### Test 6: Plaintext
+
+    http://localhost:8080/plaintext
+

@@ -1,4 +1,4 @@
-FROM crystallang/crystal:0.26.1
+FROM crystallang/crystal:1.1.1
 
 WORKDIR /amber
 COPY config config
@@ -9,7 +9,8 @@ COPY shard.yml shard.yml
 
 ENV GC_MARKERS 1
 ENV AMBER_ENV production
-ENV DATABASE_URL postgres://benchmarkdbuser:benchmarkdbpass@tfb-database:5432/hello_world?initial_pool_size=56&max_pool_size=56&max_idle_pool_size=56
+ENV DATABASE_URI postgres://benchmarkdbuser:benchmarkdbpass@tfb-database:5432/hello_world?initial_pool_size=32&max_pool_size=32&max_idle_pool_size=32
+#ENV DATABASE_URI mysql://benchmarkdbuser:benchmarkdbpass@tfb-database:3306/hello_world?initial_pool_size=32&max_pool_size=32&max_idle_pool_size=32
 
 RUN apt-get install -yqq libyaml-dev
 RUN shards build amber --release --no-debug
