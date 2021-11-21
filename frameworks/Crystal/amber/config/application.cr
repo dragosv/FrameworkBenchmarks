@@ -35,7 +35,7 @@ Amber::Server.configure do |settings|
   # spinning an instance for each number of process specified here.
   # Rule of thumb, always leave at least 1 core available for system processes/resources.
   #
-  settings.process_count = 2 #(System.cpu_count).to_i32
+  settings.process_count = 1 #(System.cpu_count).to_i32
   #
   #
   # PORT: This is the port that you're application will run on. Examples would be (80, 443, 3000, 8080)
