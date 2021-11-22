@@ -1,6 +1,5 @@
 require "jennifer"
 require "jennifer/adapter/postgres" 
-require "jennifer/adapter/mysql" 
 
 APP_ENV = ENV["AMBER_ENV"]? || "development"
 

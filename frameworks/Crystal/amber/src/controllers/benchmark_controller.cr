@@ -69,8 +69,6 @@ class BenchmarkController < Amber::Controller::Base
   def fortunes
     response.content_type = HTML_UTF8
     fortune = Fortune.new({:id => 0, :message => "Additional fortune added at request time."})
-    # fortune.id = 0
-    # fortune.message = 
 
     fortunes = Fortune.all.to_a
     fortunes << fortune
