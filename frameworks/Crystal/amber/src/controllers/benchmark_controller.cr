@@ -51,15 +51,18 @@ class BenchmarkController < Amber::Controller::Base
     queries = params["queries"]
     queries = queries.to_i? || 1
     queries = queries.clamp(1..500)
+    results = [{id: 0, randomNumber: 0}]
 
-    results = (1..queries).map do
-      if world = World.find rand(1..ID_MAXIMUM)
-
-        random_number = rand(1..ID_MAXIMUM)
-
-        world.update({:random_number => random_number})
-
-        {id: world.id, randomNumber: random_number}
+    Jennifer::Adapter.default_adapter.transaction do |tx|
+      results = (1..queries).map do
+        if world = World.find rand(1..ID_MAXIMUM)
+  
+          random_number = rand(1..ID_MAXIMUM)
+  
+          world.update({:random_number => random_number})
+  
+          {id: world.id, randomNumber: random_number}
+        end
       end
     end
 

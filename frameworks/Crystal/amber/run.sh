@@ -1,5 +1,3 @@
 #!/bin/bash
 
-./bin/amber &
-
-wait
+./bin/amber
