@@ -37,11 +37,41 @@ class BenchmarkController < Amber::Controller::Base
     queries = queries.to_i? || 1
     queries = queries.clamp(1..500)
 
-    results = (1..queries).map do
-      if world = World.find rand(1..ID_MAXIMUM)
-        {id: world.id, randomNumber: world.randomnumber}
+    c = Channel(World | Nil).new
+    worlds = Array(World).new
+
+    (1..queries).map do
+      spawn do
+        begin
+          if world = World.find rand(1..ID_MAXIMUM)
+            c.send(world)
+          end
+        rescue e : Exception
+
+        else
+          c.send(nil)
+        end
       end
     end
+
+    loop do
+      if world = c.receive?
+        if world.is_a?(World)
+          worlds << world
+        end
+      else
+        break
+      end
+    end
+
+    results = worlds.map do |world|
+      {id: world.id, randomNumber: world.randomnumber}
+    end
+
+    results << {id: 0, randomNumber: 0}
+
+    puts results
+    # results = Array(World).new
 
     results.to_json
   end
